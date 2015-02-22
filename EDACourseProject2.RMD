@@ -1,0 +1,171 @@
+---
+title: "EDA Course Project 2"
+author: "Joel Edwards"
+date: "Sunday, February 22, 2015"
+output: html_document
+---
+=============
+Note: Some code makes use of examples used in Udacitys Data Analysis with R
+
+Merges the training and the test sets to create one data set.
+------------------------------------------------------------
+#### 1 - Download file to a directory and unzip contents
+```{r}
+fileUrl<-"https://d396qusza40orc.cloudfront.net/exdata%2Fdata%2FNEI_data.zip"
+download.file(fileUrl, destfile="C:/Users/Huitzilopoctli/Desktop/EDA-Course-Project-2/EDAProject.zip")
+unzip(zipfile="C:/Users/Huitzilopoctli/Desktop/EDA-Course-Project-2/EDAProject.zip",exdir="C:/Users/Huitzilopoctli/Desktop/EDA-Course-Project-2/")
+```
+
+#### 2 - Load RDS files into R
+```{r}
+NEI <- readRDS("C:/Users/Huitzilopoctli/Desktop/EDA-Course-Project-2/EDAProject/summarySCC_PM25.rds")
+SCC <- readRDS("C:/Users/Huitzilopoctli/Desktop/EDA-Course-Project-2/EDAProject/Source_Classification_Code.rds")
+```
+
+#### 3 - Have total emissions from PM2.5 decreased in the United States from 1999 to 2008? 
+* Average emissions have declined in tonnes
+* Median emissions declined slightly (not as pronounced as averages) throughout the 9 year period
+* Statistical significance is questionable as variances are extremely high
+```{r}
+## Make a factor with levels
+NEI <- transform(NEI, Year = factor(year))
+
+## How many pollutants are there? Found only One
+unique(NEI$Pollutant)
+
+## Run a group by summary of statistics to find mean and standard deviation of Emissions by Years. 
+## Given the data emissions have average emissions have declined in tonnes
+## and median emissions declined slightly throughout the 9 year period
+## however variances are extremely high thus not certain if decline in emissions are stat .significant
+library(doBy)
+## Used Bargraphs to provide visual comparison of (1) average, (2) median and total emissions
+xtrial<-summaryBy(Emissions ~ Year, data = NEI, FUN = function(x) { c(mu = mean(x), std = sd(x), md =median(x)) })
+xtrial
+
+par(mfrow = c(1, 2))
+bp<-barplot(xtrial$Emissions.mu, 
+            col = rainbow(20, start = 0, end = 1),
+            main = "Average Emissions from 1999 - 2008",
+            xlab = "Years",
+            ylab = "Average Emissions (Tonnes)")
+axis(1,at=bp,labels=xtrial$Year)
+
+boxplot(log(Emissions+1) ~ Year, 
+        data=NEI,
+        ylim=c(0,1),
+        col = rainbow(20, start = 0, end = 1),
+        main = "Log(Median) Emissions from 1999 - 2008",
+        xlab = "Years",
+        ylab = "Log(Median) Emissions (Tonnes)")
+
+```
+
+#### 4 - Have total emissions from PM2.5 decreased in the Baltimore City from 1999 to 2008? 
+* Average emissions have declined in tonnes
+* Median emissions declined slightly throughout the 9 year period
+* Variances have declined. Probably grouping across demographics caused increase in previous variance
+```{r}
+## Subset required.
+NEI.maryland.emissions<-subset(NEI, fips==24510, select=c("Emissions", "type", "Year"))
+
+## Statistical summary of mean, sd, and median.
+xtrial<-summaryBy(Emissions ~ Year, data = NEI.maryland.emissions, FUN = function(x) { c(mu = mean(x), std = sd(x), md =median(x)) } )
+xtrial
+
+par(mfrow = c(1, 2))
+bp<-barplot(xtrial$Emissions.mu, 
+            col = rainbow(20, start = 0, end = 1),
+            main = "Average Emissions from 1999 - 2008 (Maryland)",
+            xlab = "Years",
+            ylab = "Average Emissions (Tonnes)")
+axis(1,at=bp,labels=xtrial$Year)
+
+boxplot(log(Emissions+1) ~ Year, 
+        data=NEI,
+        ylim=c(0,1),
+        col = rainbow(20, start = 0, end = 1),
+        main = "Log(Median) Emissions from 1999 - 2008 (Maryland)",
+        xlab = "Years",
+        ylab = "Log(Median) Emissions (Tonnes)")
+```
+
+#### 5 - Which sources have seen decreases/increases in emissions from 1999-2008 for Baltimore City?
+* Statistical summary illustrates declines in average emission rates across all emission types.
+* Graphs show outliers influence the averages, thus statistical medians are more representative.
+
+* Using medians and graphs, Road and Non-road emissions have initially declined then held steady.
+* Point emissions have declined over time continually.
+* Non-point emissions vary, initially increasing in emissions then subsiding down in 2008
+```{r}
+## Code guidelines adapted from: http://www.cookbook-r.com/Graphs/Multiple_graphs_on_one_page_(ggplot2)/
+library("ggplot2")
+xtrial<-summaryBy(Emissions ~ type + Year, data = NEI.maryland.emissions, FUN = function(x) { c(mu = mean(x), std = sd(x), md =median(x)) } )
+xtrial
+
+ggplot(NEI.maryland.emissions, aes(Year, Emissions), main="Emissions by type from 1999 - 2008: Maryland measurements") + geom_point(aes(color = type), size = 5, alpha = 0.5) + facet_grid(. ~type) + stat_summary(fun.y = median, fun.ymin = median, fun.ymax = median, geom = "crossbar", width = 0.5) + ylim(0,250)
+
+```
+#### 6 - Across the US, how have coal emissions changed between 1999 - 2008?
+* Statistical summary illustrates declines in average emission rates across all emission types.
+* Graphs show outliers influence the averages, thus statistical medians are more representative.
+
+* Using medians and graphs, Commercial/Insitutional coal emissions have declined (small declines)
+* Electric generation shows no change and varies between medians of 1 - 3 tonnes for each examined year.
+* Boilers (Industrial) are actually increasing in emissions.
+```{r}
+## Finds coal sources & respective SCC code
+## Derives a temp dataset from NEI where SCC is a coal source 
+US.coalsource.emissions <- NEI[NEI$SCC %in% SCC[grep("Coal", SCC$EI.Sector), 1], ]
+## For EI Sector associated to SCC code
+EISector<-subset(SCC, select=c("SCC","EI.Sector"))
+US.coalsource.emissions<-merge(EISector, US.coalsource.emissions, by="SCC")[c(1,2,5,8)]
+rm(EISector)
+
+ggplot(US.coalsource.emissions, aes(x = Year, y = Emissions)) + geom_point(aes(color = EI.Sector), size = 10, alpha = 0.3) + facet_grid(. ~EI.Sector) + stat_summary(fun.y = median, fun.ymin = median, fun.ymax = median, geom = "crossbar", width = 0.5) + ylim(0,5000)
+
+xtrial<-summaryBy(Emissions ~ EI.Sector + Year, data = US.coalsource.emissions, FUN = function(x) { c(mu = mean(x), std = sd(x), md =median(x)) } )
+xtrial
+```
+#### 7 - How have emissions from motor vehicle sources changed from 1999-2008 in Baltimore City?
+Average and median vehicle emissions have all declined between 1999 - 2008.
+```{r}
+# Get Baltimore emissions from motor vehicle sources
+Maryland.vehilce.emissions <- NEI[NEI$SCC %in% SCC[grep("Vehicle", SCC$EI.Sector), 1], ]
+EISector<-subset(SCC, select=c("SCC","EI.Sector"))
+Maryland.vehilce.emissions<-merge(EISector, Maryland.vehilce.emissions, by="SCC")
+Maryland.vehilce.emissions<-subset(Maryland.vehilce.emissions, fips=="24510", select=c("Emissions", "EI.Sector", "type", "Year", "fips"))
+
+## Used Bargraphs to provide visual comparison of (1) average, (2) median and total emissions
+xtrial<-summaryBy(Emissions ~ EI.Sector+Year, data = Maryland.vehilce.emissions, FUN = function(x) { c(mu = mean(x), std = sd(x), md =median(x)) })
+xtrial
+
+ggplot(xtrial, aes(x = Year, y = Emissions.mu)) + geom_point(aes(color = EI.Sector), size = 10, alpha = 0.3) + geom_line(aes(group=1)) + facet_grid(. ~EI.Sector)
+
+ggplot(xtrial, aes(x = Year, y = Emissions.md)) + geom_point(aes(color = EI.Sector), size = 10, alpha = 0.3) + geom_line(aes(group=1)) + facet_grid(. ~EI.Sector)
+```
+#### 8 - Baltimore vs LA Vehicle Emissions?
+Greatest change is Baltimore (in terms of change - 300% difference).
+In terms of size, LA is the greater.
+```{r}
+# Prepare LA & Baltimore Data
+LA.vehilce.emissions <- NEI[NEI$SCC %in% SCC[grep("Vehicle", SCC$EI.Sector), 1], ]
+EISector<-subset(SCC, select=c("SCC","EI.Sector"))
+LA.vehilce.emissions<-merge(EISector, LA.vehilce.emissions, by="SCC")
+LA.vehilce.emissions<-subset(LA.vehilce.emissions, fips=="06037", select=c("Emissions", "EI.Sector", "type", "Year", "fips"))
+
+LA.Balt.vehicle.emissions<-rbind(Maryland.vehilce.emissions,LA.vehilce.emissions)
+LA.Balt.vehicle.emissions$State<-(ifelse(LA.Balt.vehicle.emissions$fips==24510,"Balt","LA"))
+
+## Used Bargraphs to provide visual comparison of (1) average, (2) median and total emissions
+xtrial<-summaryBy(Emissions ~ State+Year, data = LA.Balt.vehicle.emissions, FUN = function(x) { c(mu = mean(x), md =median(x), std = sd(x), summation=sum(x))})
+xtrial
+
+ggplot(data=xtrial, aes(x=Year, y=Emissions.summation, fill=State)) + 
+  geom_bar(stat="identity", position=position_dodge()) + 
+  xlab('Year') + 
+  ylab('Total Emissions Tonnes') + 
+  ggtitle('Comparison of LA vs Baltimore Emissions Over Time' ) 
+```
+
+
+
